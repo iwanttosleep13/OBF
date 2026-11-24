@@ -1,0 +1,194 @@
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
+import java.util.regex.*;
+
+public class OBF {
+
+    private static final Set<String> RESERVED = new HashSet<>(
+            Arrays.asList(
+                    "abstract", "assert", "boolean", "break", "byte",
+                    "case", "catch", "char", "class", "const",
+                    "continue", "default", "do", "double", "else",
+                    "enum", "extends", "final", "finally", "float",
+                    "for", "if", "implements", "import", "instanceof",
+                    "int", "interface", "long", "native", "new",
+                    "package", "private", "protected", "public",
+                    "return", "short", "static", "strictfp", "super",
+                    "switch", "synchronized", "this", "throw",
+                    "throws", "transient", "try", "void", "volatile",
+                    "while", "true", "false", "null", "var",
+                    "record", "sealed", "permits", "yield"
+            )
+    );
+
+    public static void main(String[] args) {
+
+        Scanner input = new Scanner(System.in);
+
+        System.out.print("Введите путь к директории: ");
+        String folder = input.nextLine();
+
+        System.out.print("Введите имя Java-файла: ");
+        String sourceName = input.nextLine();
+
+        Path sourcePath = Paths.get(folder, sourceName);
+
+        if (!Files.exists(sourcePath) ||
+                !sourceName.endsWith(".java")) {
+
+            System.out.println("Файл не найден!");
+            return;
+        }
+
+        try {
+            String source = Files.readString(sourcePath);
+
+            // Удаление комментариев
+            source = clearComments(source);
+
+            // Уплотнение исходного текста
+            source = minify(source);
+
+            // Изменение имени класса
+            String originalName = sourceName.substring(
+                    0, sourceName.length() - 5
+            );
+
+            String obfuscatedName = "OBF";
+
+            source = source.replaceAll(
+                    "\\b" + Pattern.quote(originalName) + "\\b",
+                    obfuscatedName
+            );
+
+            // Замена имен переменных и методов
+            source = changeNames(source, obfuscatedName);
+
+            // Запись нового файла
+            Path resultPath = Paths.get(
+                    folder, obfuscatedName + ".java"
+            );
+
+            Files.writeString(resultPath, source);
+
+            System.out.println("\nОбфускация завершена!");
+            System.out.println("Результат: " + resultPath);
+
+        } catch (IOException ex) {
+            System.out.println("Ошибка: " + ex.getMessage());
+        }
+    }
+
+    // Создание короткого имени
+    private static String makeName(int value) {
+
+        String chars = "abcdefghijklmnopqrstuvwxyz";
+        StringBuilder result = new StringBuilder();
+
+        do {
+            result.insert(0, chars.charAt(value % 26));
+            value = value / 26 - 1;
+        } while (value >= 0);
+
+        return result.toString();
+    }
+
+    // Удаление комментариев
+    private static String clearComments(String source) {
+
+        String expression =
+                "\"(?:\\\\.|[^\"\\\\])*\"" +
+                "|'(?:\\\\.|[^'\\\\])*'" +
+                "|//[^\\r\\n]*" +
+                "|/\\*[\\s\\S]*?\\*/";
+
+        Matcher search = Pattern.compile(expression).matcher(source);
+        StringBuffer cleaned = new StringBuffer();
+
+        while (search.find()) {
+
+            String part = search.group();
+
+            if (part.startsWith("//") ||
+                    part.startsWith("/*")) {
+
+                search.appendReplacement(cleaned, " ");
+
+            } else {
+
+                search.appendReplacement(
+                        cleaned,
+                        Matcher.quoteReplacement(part)
+                );
+            }
+        }
+
+        search.appendTail(cleaned);
+
+        return cleaned.toString();
+    }
+
+    // Сжатие кода
+    private static String minify(String source) {
+
+        source = source.replaceAll("\\s+", " ");
+
+        return source.trim();
+    }
+
+    // Переименование идентификаторов
+    private static String changeNames(
+            String source, String mainClass) {
+
+        Pattern identifier = Pattern.compile(
+                "\\b[a-zA-Z_$][a-zA-Z0-9_$]*\\b"
+        );
+
+        Matcher search = identifier.matcher(source);
+
+        Map<String, String> replacements = new LinkedHashMap<>();
+
+        // Поиск имен для замены
+        while (search.find()) {
+
+            String current = search.group();
+
+            if (!RESERVED.contains(current) &&
+                    !current.equals(mainClass)) {
+
+                replacements.putIfAbsent(current, "");
+            }
+        }
+
+        // Формирование новых имен
+        int counter = 0;
+
+        for (String oldName : replacements.keySet()) {
+            replacements.put(oldName, makeName(counter++));
+        }
+
+        // Замена найденных идентификаторов
+        search = identifier.matcher(source);
+
+        StringBuffer modified = new StringBuffer();
+
+        while (search.find()) {
+
+            String current = search.group();
+
+            String newName = replacements.getOrDefault(
+                    current, current
+            );
+
+            search.appendReplacement(
+                    modified,
+                    Matcher.quoteReplacement(newName)
+            );
+        }
+
+        search.appendTail(modified);
+
+        return modified.toString();
+    }
+}
